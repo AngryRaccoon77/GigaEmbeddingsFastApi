@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from transformers import AutoModel
+from ricKh.text import TextType
+from transformers import AutoModel, AutoTokenizer
 import torch.nn.functional as F
 
 # Константы
@@ -17,6 +18,10 @@ try:
         cache_dir=MODEL_CACHE_DIR,
         device_map="auto",
     )
+    tokenizer = AutoTokenizer.from_pretrained(
+        EMBEDDING_MODEL_NAME,
+        cache_dir=MODEL_CACHE_DIR,
+    )
 except Exception as e:
     raise RuntimeError(f"Не удалось загрузить модель: {e}")
 
@@ -26,6 +31,13 @@ class TextInput(BaseModel):
 
 class EmbeddingResponse(BaseModel):
     embedding: list[float]
+
+class TokenCountInput(BaseModel):
+    text: str
+    text_type: TextType = TextType.passage
+
+class TokenCountResponse(BaseModel):
+    token_count: int
 
 # Создание FastAPI приложения
 app = FastAPI()
@@ -53,6 +65,20 @@ def embed_query(input: TextInput):
         return {"embedding": embedding}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ошибка генерации эмбеддинга: {e}")
+
+@app.post("/count_tokens", response_model=TokenCountResponse)
+def count_tokens(input: TokenCountInput):
+    try:
+        # Определение инструкции в зависимости от типа текста
+        instruction = PASSAGE_INSTRUCTION if input.text_type == TextType.passage else QUERY_INSTRUCTION
+        # Составление полного текста (инструкция + текст)
+        full_text = instruction + input.text
+        # Токенизация текста и подсчет токенов
+        token_ids = tokenizer.encode(full_text)
+        token_count = len(token_ids)
+        return {"token_count": token_count}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка при подсчете токенов: {e}")
 
 if __name__ == "__main__":
     import uvicorn
