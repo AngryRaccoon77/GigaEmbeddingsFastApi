@@ -1,22 +1,26 @@
+from enum import Enum
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from ricKh.text import TextType
-from transformers import AutoModel, AutoTokenizer
+from transformers import AutoModel, BitsAndBytesConfig, AutoTokenizer
 import torch.nn.functional as F
 
 # Константы
 EMBEDDING_MODEL_NAME = "ai-sage/Giga-Embeddings-instruct"
-MODEL_CACHE_DIR = "D:/bobrKurwaAssistantFQW/model_cache"
+MODEL_CACHE_DIR = "cache_dir"
 PASSAGE_INSTRUCTION = ""  # Инструкция для пассажей (пустая строка)
 QUERY_INSTRUCTION = "Создайте эмбеддинги для следующего запроса, чтобы найти релевантные тексты:\nзапрос: "  # Инструкция для запросов
 
 # Загрузка модели при запуске сервиса
 try:
+    quantization_config = BitsAndBytesConfig(load_in_8bit=True)
     model = AutoModel.from_pretrained(
         EMBEDDING_MODEL_NAME,
         trust_remote_code=True,
         cache_dir=MODEL_CACHE_DIR,
         device_map="auto",
+        quantization_config=quantization_config
+
     )
     tokenizer = AutoTokenizer.from_pretrained(
         EMBEDDING_MODEL_NAME,
@@ -26,6 +30,10 @@ except Exception as e:
     raise RuntimeError(f"Не удалось загрузить модель: {e}")
 
 # Определение моделей Pydantic для входных и выходных данных
+
+class TextType(str, Enum):
+    passage = "passage"
+    query = "query"
 class TextInput(BaseModel):
     text: str
 
@@ -38,7 +46,6 @@ class TokenCountInput(BaseModel):
 
 class TokenCountResponse(BaseModel):
     token_count: int
-
 # Создание FastAPI приложения
 app = FastAPI()
 
@@ -65,6 +72,7 @@ def embed_query(input: TextInput):
         return {"embedding": embedding}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ошибка генерации эмбеддинга: {e}")
+
 
 @app.post("/count_tokens", response_model=TokenCountResponse)
 def count_tokens(input: TokenCountInput):
